@@ -1,0 +1,8 @@
+[{<<"inert">>,
+  {git,"https://github.com/msantos/inert.git",
+       {ref,"28d31af464a274b08fe30a14db2e9c6793f17c58"}},
+  0},
+ {<<"procket">>,
+  {git,"https://github.com/msantos/procket.git",
+       {ref,"41e93841c519e37496a5e0f63a3761b36eec9a6a"}},
+  0}].

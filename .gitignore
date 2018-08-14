@@ -1,0 +1,3 @@
+_build/
+c_src/*.o
+priv/
