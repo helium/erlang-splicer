@@ -11,6 +11,8 @@
 %%====================================================================
 
 splice(FD1, FD2) ->
+    inert:fdset(FD1, read),
+    inert:fdset(FD2, read),
     case splice_int(FD1, FD2) of
         ok ->
             splice(FD1, FD2);
@@ -21,11 +23,17 @@ splice(FD1, FD2) ->
     end.
 
 splice(FD1, FD2, Ref) ->
-    case splice_int(FD1, FD2, Ref) of
-        {ok, Ref} ->
-            splice(FD1, FD2, Ref);
-        Other ->
-            Other
+    %% wait for one of the FDs to wake us up
+    receive
+        {inert_read, _, FD} ->
+            [OtherFD] = [FD1, FD2] -- [FD],
+            case splice_int(FD, OtherFD, Ref) of
+                ok ->
+                    inert:fdset(FD),
+                    splice(FD1, FD2, Ref);
+                Other ->
+                    Other
+            end
     end.
 
 %% this function is a NIF only
@@ -34,13 +42,11 @@ splice_int(_FD1, _FD2, _Ref) ->
 
 %% this function *may* be replaced by a NIF
 splice_int(FD1, FD2) ->
-    inert:fdset(FD1, read),
-    inert:fdset(FD2, read),
     %% wait for one of the FDs to wake us up
     receive
         {inert_read, _, FD} ->
             [OtherFD] = [FD1, FD2] -- [FD],
-            inert:fdclr(OtherFD),
+            inert:fdset(FD),
             BitSize = erlang:system_info(wordsize)*8,
             {ok, Code, []} = procket:alloc([<<0:BitSize/integer>>]),
             case procket:ioctl(FD, fionread(), Code) of
@@ -84,7 +90,7 @@ write_exact(FD, Buf) ->
 
 init() ->
     case os:type() of
-        {unix, linux2} ->
+        {unix, linux} ->
             SoName = case code:priv_dir(?APPNAME) of
                          {error, bad_name} ->
                              case filelib:is_dir(filename:join(["..", priv])) of
@@ -153,6 +159,51 @@ splice_test() ->
              end,
     ?assert(Result2),
 
+    ok.
+
+large_splice_test() ->
+    inert:start(),
+    {ok, ListenSock} = gen_tcp:listen(0, [binary, {active, false}]),
+    {ok, Port} = inet:port(ListenSock),
+    Parent = self(),
+    spawn(fun() ->
+                  {ok, SA} = gen_tcp:accept(ListenSock),
+                  {ok, SB} = gen_tcp:accept(ListenSock),
+                  gen_tcp:controlling_process(SA, Parent),
+                  gen_tcp:controlling_process(SB, Parent),
+                  Parent ! {SA, SB}
+          end),
+    {ok, SocketC} = gen_tcp:connect("127.0.0.1", Port, [binary, {active, false}]),
+    {ok, SocketD} = gen_tcp:connect("127.0.0.1", Port, [binary, {active, false}]),
+    receive
+        {SocketA, SocketB} -> ok
+    end,
+
+    Pid = spawn(fun() ->
+                        receive
+                            {A, B} ->
+                                splice(element(2, inet:getfd(A)), element(2, inet:getfd(B)))
+                        end
+                end),
+
+    gen_tcp:controlling_process(SocketA, Pid),
+    gen_tcp:controlling_process(SocketB, Pid),
+
+    Pid ! {SocketA, SocketB},
+
+    Pkt = crypto:strong_rand_bytes(16384),
+    {Time, {ok, Pkt}} = timer:tc(fun() ->
+                                         gen_tcp:send(SocketC, Pkt),
+                                         gen_tcp:recv(SocketD, 16384)
+                                 end),
+
+    io:format(user, "Time ~f~n", [Time/1000000]),
+    Pkt2 = crypto:strong_rand_bytes(4096),
+    {Time2, {ok, Pkt2}} = timer:tc(fun() ->
+                                         gen_tcp:send(SocketC, Pkt2),
+                                         gen_tcp:recv(SocketD, 4096)
+                                 end),
+    io:format(user, "Time ~f~n", [Time2/1000000]),
     ok.
 
 -endif.

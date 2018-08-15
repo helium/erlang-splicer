@@ -50,39 +50,34 @@ splice2(ErlNifEnv * env, int argc, const ERL_NIF_TERM argv[])
 static ERL_NIF_TERM
 splice3(ErlNifEnv * env, int argc, const ERL_NIF_TERM argv[])
 {
-    int fd1, fd2, infd, outfd;
+    int fd1, fd2;
     struct splicer_pipe *pipe;
     if (!enif_get_int(env, argv[0], &fd1) || !enif_get_int(env, argv[1], &fd2)) {
         return enif_make_badarg(env);
     }
 
     int bytes;
-    infd = fd1;
-    outfd = fd2;
     ioctl(fd1, FIONREAD, &bytes);
     if (bytes == 0) {
-        ioctl(fd2, FIONREAD, &bytes);
-        if (bytes == 0) {
-            return enif_make_tuple2(env, ATOM_OK, argv[2]);
-        }
-        infd = fd2;
-        outfd = fd1;
+        return ATOM_OK;
+    } else if (bytes > 4096) {
+        bytes = 4096;
     }
 
     if (!enif_get_resource(env, argv[2], SPLICER_RESOURCE, (void**)&pipe)) {
         return enif_make_badarg(env);
     }
 
-    ssize_t res = splice(infd, NULL, pipe->pipefd[1], NULL, bytes, SPLICE_F_MOVE | SPLICE_F_MORE);
+    ssize_t res = splice(fd1, NULL, pipe->pipefd[1], NULL, bytes, SPLICE_F_MOVE | SPLICE_F_MORE);
     if (res == -1) {
         return ATOM_ERROR;
     }
-    res = splice(pipe->pipefd[0], NULL, outfd, 0, bytes, SPLICE_F_MOVE | SPLICE_F_MORE);
+    res = splice(pipe->pipefd[0], NULL, fd2, NULL, res, SPLICE_F_MOVE | SPLICE_F_MORE);
     if (res == -1) {
         return ATOM_ERROR;
     }
 
-    return enif_make_tuple2(env, ATOM_OK, argv[2]);
+    return ATOM_OK;
 }
 
 
