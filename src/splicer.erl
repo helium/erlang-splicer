@@ -43,7 +43,7 @@ splice_int(FD1, FD2) ->
             inert:fdclr(OtherFD),
             BitSize = erlang:system_info(wordsize)*8,
             {ok, Code, []} = procket:alloc([<<0:BitSize/integer>>]),
-            case procket:ioctl(FD, 16#541B, Code) of
+            case procket:ioctl(FD, fionread(), Code) of
                 {ok, Res} ->
                     <<BytesToRead:BitSize/integer-unsigned-native>> = Res,
                     case procket:read(FD, BytesToRead) of
@@ -60,6 +60,17 @@ splice_int(FD1, FD2) ->
 %%====================================================================
 %% Internal functions
 %%====================================================================
+
+fionread() ->
+    case os:type() of
+        {unix, linux} ->
+            16#541B;
+        {unix, darwin} ->
+            16#4004667f;
+        _ ->
+            erlang:error({unsupported_os, "add a definition for fionread's value for this operating system"})
+    end.
+
 write_exact(FD, Buf) ->
     case procket:write(FD, Buf) of
         ok ->
@@ -73,7 +84,7 @@ write_exact(FD, Buf) ->
 
 init() ->
     case os:type() of
-        {unix, linux} ->
+        {unix, linux2} ->
             SoName = case code:priv_dir(?APPNAME) of
                          {error, bad_name} ->
                              case filelib:is_dir(filename:join(["..", priv])) of
