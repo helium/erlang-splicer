@@ -11,37 +11,23 @@
 %%====================================================================
 
 splice(FD1, FD2) ->
-    inert:fdset(FD1, read),
-    inert:fdset(FD2, read),
     case splice_int(FD1, FD2) of
         ok ->
             splice(FD1, FD2);
         {ok, Ref} ->
-            splice(FD1, FD2, Ref);
+            %% Linux NIF version, returns a Ref
+            %% block forever and ever
+            receive
+                Ref -> ok
+            end;
         Other ->
             Other
     end.
 
-splice(FD1, FD2, Ref) ->
-    %% wait for one of the FDs to wake us up
-    receive
-        {inert_read, _, FD} ->
-            [OtherFD] = [FD1, FD2] -- [FD],
-            case splice_int(FD, OtherFD, Ref) of
-                ok ->
-                    inert:fdset(FD),
-                    splice(FD1, FD2, Ref);
-                Other ->
-                    Other
-            end
-    end.
-
-%% this function is a NIF only
-splice_int(_FD1, _FD2, _Ref) ->
-    erlang:nif_error({not_loaded, [{module, ?MODULE}, {line, ?LINE}]}).
-
 %% this function *may* be replaced by a NIF
 splice_int(FD1, FD2) ->
+    inert:fdset(FD1, read),
+    inert:fdset(FD2, read),
     %% wait for one of the FDs to wake us up
     receive
         {inert_read, _, FD} ->
@@ -198,10 +184,10 @@ large_splice_test() ->
                                  end),
 
     io:format(user, "Time ~f~n", [Time/1000000]),
-    Pkt2 = crypto:strong_rand_bytes(4096),
+    Pkt2 = crypto:strong_rand_bytes(4123),
     {Time2, {ok, Pkt2}} = timer:tc(fun() ->
                                          gen_tcp:send(SocketC, Pkt2),
-                                         gen_tcp:recv(SocketD, 4096)
+                                         gen_tcp:recv(SocketD, 4123)
                                  end),
     io:format(user, "Time ~f~n", [Time2/1000000]),
     ok.

@@ -18,6 +18,9 @@
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
+#include <sys/epoll.h>
+
+#define PIPE_SIZE 4096
 
 static ErlNifResourceType *SPLICER_RESOURCE;
 
@@ -25,8 +28,82 @@ static ERL_NIF_TERM ATOM_OK;
 static ERL_NIF_TERM ATOM_ERROR;
 
 struct splicer_pipe {
+    int fd1;
+    int fd2;
     int pipefd[2];
+    ErlNifTid tid;
+    ErlNifPid dst;
+    ErlNifEnv* env;
+    ErlNifThreadOpts* opts;
+    ERL_NIF_TERM ref;
 };
+
+void* splicer_run(void*);
+
+void* splicer_run(void *obj)
+{
+
+    struct splicer_pipe *mypipe = (struct splicer_pipe*)obj;
+
+    int epfd = epoll_create(2);
+    if (epfd < 0) {
+        goto done;
+    }
+
+    struct epoll_event event, events[2];
+    event.data.fd = mypipe->fd1;
+    event.events = EPOLLIN;
+    int ret = epoll_ctl(epfd, EPOLL_CTL_ADD, mypipe->fd1, &event);
+    if (ret) {
+        goto done;
+    }
+
+    event.data.fd = mypipe->fd2;
+    ret = epoll_ctl(epfd, EPOLL_CTL_ADD, mypipe->fd2, &event);
+    if (ret) {
+        goto done;
+    }
+
+    int nfds;
+    while(1) {
+        nfds = epoll_wait(epfd, events, 2, -1);
+        for (int i = 0; i < nfds; ++i) {
+            int rfd = events[i].data.fd;
+            int wfd = (events[i].data.fd == mypipe->fd1) ? mypipe->fd2 : mypipe->fd1;
+            int bytes;
+            ioctl(rfd, FIONREAD, &bytes);
+            if (bytes == 0) {
+                continue;
+            }
+            for (int i = bytes; i > 0; i-=PIPE_SIZE) {
+                ssize_t res;
+                if (i <= PIPE_SIZE) {
+                    res = splice(rfd, NULL, mypipe->pipefd[1], NULL, i, SPLICE_F_MOVE);
+                } else {
+                    res = splice(rfd, NULL, mypipe->pipefd[1], NULL, PIPE_SIZE, SPLICE_F_MOVE);
+                }
+                if (res == -1) {
+                    goto done;
+                }
+                if (i <= PIPE_SIZE) {
+                    res = splice(mypipe->pipefd[0], NULL, wfd, NULL, res, SPLICE_F_MOVE);
+                } else {
+                    // tell splice there's more data coming
+                    res = splice(mypipe->pipefd[0], NULL, wfd, NULL, res, SPLICE_F_MOVE | SPLICE_F_MORE);
+                }
+                if (res == -1) {
+                    goto done;
+                }
+            }
+        }
+    }
+done:
+    enif_send(NULL, &(mypipe->dst), mypipe->env, mypipe->ref);
+    enif_thread_exit(NULL);
+    close(mypipe->pipefd[0]);
+    close(mypipe->pipefd[1]);
+    return NULL;
+}
 
 static ERL_NIF_TERM
 splice2(ErlNifEnv * env, int argc, const ERL_NIF_TERM argv[])
@@ -43,47 +120,24 @@ splice2(ErlNifEnv * env, int argc, const ERL_NIF_TERM argv[])
         enif_release_resource(mypipe);
         return ATOM_ERROR;
     }
+    mypipe->opts = enif_thread_opts_create("splicer");
+    mypipe->env = enif_alloc_env();
+    mypipe->fd1 = fd1;
+    mypipe->fd2 = fd2;
+    enif_self(env, &mypipe->dst);
     ERL_NIF_TERM term = enif_make_resource(env, mypipe);
+    mypipe->ref = enif_make_copy(mypipe->env, term);
+    int status = enif_thread_create("splicer", &(mypipe->tid), splicer_run, mypipe, mypipe->opts);
+    if(status != 0) {
+        enif_release_resource(mypipe);
+        return enif_make_badarg(env);
+    }
     return enif_make_tuple2(env, ATOM_OK, term);
-}
-
-static ERL_NIF_TERM
-splice3(ErlNifEnv * env, int argc, const ERL_NIF_TERM argv[])
-{
-    int fd1, fd2;
-    struct splicer_pipe *pipe;
-    if (!enif_get_int(env, argv[0], &fd1) || !enif_get_int(env, argv[1], &fd2)) {
-        return enif_make_badarg(env);
-    }
-
-    int bytes;
-    ioctl(fd1, FIONREAD, &bytes);
-    if (bytes == 0) {
-        return ATOM_OK;
-    } else if (bytes > 4096) {
-        bytes = 4096;
-    }
-
-    if (!enif_get_resource(env, argv[2], SPLICER_RESOURCE, (void**)&pipe)) {
-        return enif_make_badarg(env);
-    }
-
-    ssize_t res = splice(fd1, NULL, pipe->pipefd[1], NULL, bytes, SPLICE_F_MOVE | SPLICE_F_MORE);
-    if (res == -1) {
-        return ATOM_ERROR;
-    }
-    res = splice(pipe->pipefd[0], NULL, fd2, NULL, res, SPLICE_F_MOVE | SPLICE_F_MORE);
-    if (res == -1) {
-        return ATOM_ERROR;
-    }
-
-    return ATOM_OK;
 }
 
 
 static ErlNifFunc nif_funcs[] =
-    {{"splice_int", 2, splice2, 0},
-     {"splice_int", 3, splice3, 0}};
+    {{"splice_int", 2, splice2, 0}};
 
 #define ATOM(Id, Value)                                                        \
     {                                                                          \
