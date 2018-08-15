@@ -72,18 +72,22 @@ write_exact(FD, Buf) ->
     end.
 
 init() ->
-    SoName = case code:priv_dir(?APPNAME) of
-                 {error, bad_name} ->
-                     case filelib:is_dir(filename:join(["..", priv])) of
-                         true ->
-                             filename:join(["..", priv, ?LIBNAME]);
-                         _ ->
-                             filename:join([priv, ?LIBNAME])
-                     end;
-                 Dir ->
-                     filename:join(Dir, ?LIBNAME)
-             end,
-    erlang:load_nif(SoName, 0).
+    case os:type() of
+        {unix, linux} ->
+            SoName = case code:priv_dir(?APPNAME) of
+                         {error, bad_name} ->
+                             case filelib:is_dir(filename:join(["..", priv])) of
+                                 true ->
+                                     filename:join(["..", priv, ?LIBNAME]);
+                                 _ ->
+                                     filename:join([priv, ?LIBNAME])
+                             end;
+                         Dir ->
+                             filename:join(Dir, ?LIBNAME)
+                     end,
+            erlang:load_nif(SoName, 0);
+        _ -> ok
+    end.
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
