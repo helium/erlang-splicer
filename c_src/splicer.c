@@ -73,7 +73,7 @@ void* splicer_run(void *obj)
             int bytes;
             ioctl(rfd, FIONREAD, &bytes);
             if (bytes == 0) {
-                continue;
+                goto done;
             }
             for (int i = bytes; i > 0; i-=PIPE_SIZE) {
                 ssize_t res;

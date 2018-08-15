@@ -11,10 +11,14 @@
 %%====================================================================
 
 splice(FD1, FD2) ->
+    inert:fdset(FD1, read),
+    inert:fdset(FD2, read),
     case splice_int(FD1, FD2) of
         ok ->
-            splice(FD1, FD2);
+            splice2(FD1, FD2);
         {ok, Ref} ->
+            inert:fdclr(FD1),
+            inert:fdclr(FD2),
             %% Linux NIF version, returns a Ref
             %% block forever and ever
             receive
@@ -24,27 +28,43 @@ splice(FD1, FD2) ->
             Other
     end.
 
+splice2(FD1, FD2) ->
+    case splice_int(FD1, FD2) of
+        ok ->
+            splice2(FD1, FD2);
+        Other ->
+            Other
+    end.
+
 %% this function *may* be replaced by a NIF
 splice_int(FD1, FD2) ->
-    inert:fdset(FD1, read),
-    inert:fdset(FD2, read),
     %% wait for one of the FDs to wake us up
     receive
         {inert_read, _, FD} ->
             [OtherFD] = [FD1, FD2] -- [FD],
-            inert:fdset(FD),
             BitSize = erlang:system_info(wordsize)*8,
             {ok, Code, []} = procket:alloc([<<0:BitSize/integer>>]),
             case procket:ioctl(FD, fionread(), Code) of
-                {ok, Res} ->
-                    <<BytesToRead:BitSize/integer-unsigned-native>> = Res,
+                {ok, <<BytesToRead:BitSize/integer-unsigned-native>>} when BytesToRead == 0 ->
+                    inert:fdclr(OtherFD),
+                    done;
+                {ok, <<BytesToRead:BitSize/integer-unsigned-native>>} ->
                     case procket:read(FD, BytesToRead) of
                         {ok, Buf} ->
-                            write_exact(OtherFD, Buf);
+                            case write_exact(OtherFD, Buf) of
+                                ok ->
+                                    inert:fdset(FD, read),
+                                    ok;
+                                Other ->
+                                    inert:fdclr(OtherFD),
+                                    Other
+                            end;
                         Other ->
+                            inert:fdclr(OtherFD),
                             Other
                     end;
                 Other ->
+                    inert:fdclr(OtherFD),
                     Other
             end
     end.
@@ -190,6 +210,9 @@ large_splice_test() ->
                                          gen_tcp:recv(SocketD, 4123)
                                  end),
     io:format(user, "Time ~f~n", [Time2/1000000]),
+    gen_tcp:close(SocketC),
+    timer:sleep(2000),
+    false = is_process_alive(Pid),
     ok.
 
 -endif.
