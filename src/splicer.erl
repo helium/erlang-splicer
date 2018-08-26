@@ -10,6 +10,7 @@
 %% API functions
 %%====================================================================
 
+-spec splice(non_neg_integer(), non_neg_integer()) -> ok | {error, any()}.
 splice(FD1, FD2) ->
     inert:fdset(FD1, read),
     inert:fdset(FD2, read),
