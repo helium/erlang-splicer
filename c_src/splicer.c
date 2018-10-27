@@ -15,7 +15,7 @@
  */
 
 // for access to nonstandard GNU/Linux functions and macros
-#define __USE_GNU
+#define _GNU_SOURCE
 
 #include "erl_nif.h"
 #include <fcntl.h>
