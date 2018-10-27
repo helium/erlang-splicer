@@ -14,6 +14,9 @@
  * limitations under the License.
  */
 
+// for access to nonstandard GNU/Linux functions and macros
+#define __USE_GNU
+
 #include "erl_nif.h"
 #include <fcntl.h>
 #include <sys/ioctl.h>
