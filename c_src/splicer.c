@@ -98,10 +98,15 @@ void* splicer_run(void *obj)
         }
     }
 done:
-    enif_send(NULL, &(mypipe->dst), mypipe->env, mypipe->ref);
-    enif_thread_exit(NULL);
+    // clean up all our descriptors
+    if (epfd > 0) {
+        close(epfd);
+    }
     close(mypipe->pipefd[0]);
     close(mypipe->pipefd[1]);
+    // signal the caller we're done
+    enif_send(NULL, &(mypipe->dst), mypipe->env, mypipe->ref);
+    enif_thread_exit(NULL);
     return NULL;
 }
 
@@ -132,6 +137,9 @@ splice2(ErlNifEnv * env, int argc, const ERL_NIF_TERM argv[])
         enif_release_resource(mypipe);
         return enif_make_badarg(env);
     }
+    // return {ok, Ref} to the caller
+    // The calling process will get sent the Ref when the splice breaks
+    // to tell it that it is finished
     return enif_make_tuple2(env, ATOM_OK, term);
 }
 
