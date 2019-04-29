@@ -1,8 +1,8 @@
-[{<<"inert">>,
-  {git,"https://github.com/msantos/inert.git",
-       {ref,"28d31af464a274b08fe30a14db2e9c6793f17c58"}},
-  0},
- {<<"procket">>,
-  {git,"https://github.com/msantos/procket.git",
-       {ref,"41e93841c519e37496a5e0f63a3761b36eec9a6a"}},
-  0}].
+{"1.1.0",
+[{<<"inert">>,{pkg,<<"inert">>,<<"1.0.0">>},0},
+ {<<"procket">>,{pkg,<<"procket">>,<<"0.9.3">>},0}]}.
+[
+{pkg_hash,[
+ {<<"inert">>, <<"DF4A4E0239C5D25FE192620F7BE054DF88845E8FC9F3A8049837DE334F04068E">>},
+ {<<"procket">>, <<"593E907645307BC854CE3532F3F9C07987D8DC9848180CD2EE408FD92B22CC1E">>}]}
+].
