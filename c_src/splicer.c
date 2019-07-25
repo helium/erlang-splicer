@@ -19,6 +19,7 @@
 #include <sys/ioctl.h>
 #include <unistd.h>
 #include <sys/epoll.h>
+#include <string.h>
 
 #define PIPE_SIZE 4096
 
