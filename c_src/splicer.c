@@ -28,6 +28,7 @@ static ERL_NIF_TERM ATOM_OK;
 static ERL_NIF_TERM ATOM_ERROR;
 
 struct splicer_pipe {
+    int timeout;
     int fd1;
     int fd2;
     int pipefd[2];
@@ -66,7 +67,11 @@ void* splicer_run(void *obj)
 
     int nfds;
     while(1) {
-        nfds = epoll_wait(epfd, events, 2, -1);
+        nfds = epoll_wait(epfd, events, 2, mypipe->timeout);
+        if (nfds < 1) {
+            // timeout or error
+            goto done;
+        }
         for (int i = 0; i < nfds; ++i) {
             int rfd = events[i].data.fd;
             int wfd = (events[i].data.fd == mypipe->fd1) ? mypipe->fd2 : mypipe->fd1;
@@ -113,9 +118,18 @@ done:
 static ERL_NIF_TERM
 splice2(ErlNifEnv * env, int argc, const ERL_NIF_TERM argv[])
 {
-    int fd1, fd2;
+    int fd1, fd2, timeout;
+    char atm_infinity[10];
     if (!enif_get_int(env, argv[0], &fd1) || !enif_get_int(env, argv[1], &fd2)) {
         return enif_make_badarg(env);
+    }
+
+    if (!enif_get_int(env, argv[2], &timeout)) {
+        if (enif_get_atom(env, argv[2], atm_infinity, 10, ERL_NIF_LATIN1) && strncmp("infinity", atm_infinity, 9) == 0) {
+            timeout = -1;
+        } else {
+            return enif_make_badarg(env);
+        }
     }
 
     // allocate a resource to hold our pipe FDs
@@ -129,6 +143,7 @@ splice2(ErlNifEnv * env, int argc, const ERL_NIF_TERM argv[])
     mypipe->env = enif_alloc_env();
     mypipe->fd1 = fd1;
     mypipe->fd2 = fd2;
+    mypipe->timeout = timeout;
     enif_self(env, &mypipe->dst);
     ERL_NIF_TERM term = enif_make_resource(env, mypipe);
     mypipe->ref = enif_make_copy(mypipe->env, term);
@@ -145,7 +160,7 @@ splice2(ErlNifEnv * env, int argc, const ERL_NIF_TERM argv[])
 
 
 static ErlNifFunc nif_funcs[] =
-    {{"splice_int", 2, splice2, 0}};
+    {{"splice_int", 3, splice2, 0}};
 
 #define ATOM(Id, Value)                                                        \
     {                                                                          \
