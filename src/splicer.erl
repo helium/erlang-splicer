@@ -4,7 +4,7 @@
 -define(LIBNAME, splicer).
 
 %% API exports
--export([splice/2]).
+-export([splice/2, splice/3]).
 
 %%====================================================================
 %% API functions
@@ -12,11 +12,16 @@
 
 -spec splice(non_neg_integer(), non_neg_integer()) -> ok | {error, any()}.
 splice(FD1, FD2) ->
+    splice(FD1, FD2, infinity).
+
+
+-spec splice(non_neg_integer(), non_neg_integer(), pos_integer() | infinity) -> ok | {error, any()}.
+splice(FD1, FD2, Timeout) ->
     inert:fdset(FD1, read),
     inert:fdset(FD2, read),
-    case splice_int(FD1, FD2) of
+    case splice_int(FD1, FD2, Timeout) of
         ok ->
-            splice2(FD1, FD2);
+            splice2(FD1, FD2, Timeout);
         {ok, Ref} ->
             inert:fdclr(FD1),
             inert:fdclr(FD2),
@@ -29,16 +34,16 @@ splice(FD1, FD2) ->
             Other
     end.
 
-splice2(FD1, FD2) ->
-    case splice_int(FD1, FD2) of
+splice2(FD1, FD2, Timeout) ->
+    case splice_int(FD1, FD2, Timeout) of
         ok ->
-            splice2(FD1, FD2);
+            splice2(FD1, FD2, Timeout);
         Other ->
             Other
     end.
 
 %% this function *may* be replaced by a NIF
-splice_int(FD1, FD2) ->
+splice_int(FD1, FD2, Timeout) ->
     %% wait for one of the FDs to wake us up
     receive
         {inert_read, _, FD} ->
@@ -68,6 +73,8 @@ splice_int(FD1, FD2) ->
                     inert:fdclr(OtherFD),
                     Other
             end
+    after Timeout ->
+              {error, timeout}
     end.
 
 %%====================================================================
@@ -120,17 +127,18 @@ splice_test() ->
     {ok, ListenSock} = gen_tcp:listen(0, [binary, {active, false}]),
     {ok, Port} = inet:port(ListenSock),
     Parent = self(),
+    Ref = make_ref(),
     spawn(fun() ->
                   {ok, SA} = gen_tcp:accept(ListenSock),
                   {ok, SB} = gen_tcp:accept(ListenSock),
                   gen_tcp:controlling_process(SA, Parent),
                   gen_tcp:controlling_process(SB, Parent),
-                  Parent ! {SA, SB}
+                  Parent ! {Ref, SA, SB}
           end),
     {ok, SocketC} = gen_tcp:connect("127.0.0.1", Port, [binary, {active, false}]),
     {ok, SocketD} = gen_tcp:connect("127.0.0.1", Port, [binary, {active, false}]),
     receive
-        {SocketA, SocketB} -> ok
+        {Ref, SocketA, SocketB} -> ok
     end,
 
     Pid = spawn(fun() ->
@@ -166,24 +174,88 @@ splice_test() ->
              end,
     ?assert(Result2),
 
+    %% check infinity timeout works
+    %timer:sleep(1000),
+    %?assert(is_process_alive(Pid)),
+
     ok.
+
+timeout_test() ->
+    inert:start(),
+    {ok, ListenSock} = gen_tcp:listen(0, [binary, {active, false}]),
+    {ok, Port} = inet:port(ListenSock),
+    Parent = self(),
+    Ref = make_ref(),
+    spawn(fun() ->
+                  {ok, SA} = gen_tcp:accept(ListenSock),
+                  {ok, SB} = gen_tcp:accept(ListenSock),
+                  gen_tcp:controlling_process(SA, Parent),
+                  gen_tcp:controlling_process(SB, Parent),
+                  Parent ! {Ref, SA, SB}
+          end),
+    {ok, SocketC} = gen_tcp:connect("127.0.0.1", Port, [binary, {active, false}]),
+    {ok, SocketD} = gen_tcp:connect("127.0.0.1", Port, [binary, {active, false}]),
+    receive
+        {Ref, SocketA, SocketB} -> ok
+    end,
+
+    Pid = spawn(fun() ->
+                        receive
+                            {A, B} ->
+                                splice(element(2, inet:getfd(A)), element(2, inet:getfd(B)), 500)
+                        end
+                end),
+
+    gen_tcp:controlling_process(SocketA, Pid),
+    gen_tcp:controlling_process(SocketB, Pid),
+
+    ok = inet:setopts(SocketD, [{active, true}]),
+    ok = inet:setopts(SocketC, [{active, true}]),
+    Pid ! {SocketA, SocketB},
+
+
+    ok = gen_tcp:send(SocketC, <<"Hello">>),
+    Result = receive
+                 {tcp, SocketD, <<"Hello">>} ->
+                     true
+             after 1000 ->
+                       false
+             end,
+    ?assert(Result),
+
+    ok = gen_tcp:send(SocketD, <<"Goodbye">>),
+    Result2 = receive
+                 {tcp, SocketC, <<"Goodbye">>} ->
+                     true
+             after 1000 ->
+                       false
+             end,
+    ?assert(Result2),
+
+    %% check timeout
+    timer:sleep(500),
+    ?assertEqual(false, is_process_alive(Pid)),
+
+    ok.
+
 
 large_splice_test() ->
     inert:start(),
     {ok, ListenSock} = gen_tcp:listen(0, [binary, {active, false}]),
     {ok, Port} = inet:port(ListenSock),
     Parent = self(),
+    Ref = make_ref(),
     spawn(fun() ->
                   {ok, SA} = gen_tcp:accept(ListenSock),
                   {ok, SB} = gen_tcp:accept(ListenSock),
                   gen_tcp:controlling_process(SA, Parent),
                   gen_tcp:controlling_process(SB, Parent),
-                  Parent ! {SA, SB}
+                  Parent ! {Ref, SA, SB}
           end),
     {ok, SocketC} = gen_tcp:connect("127.0.0.1", Port, [binary, {active, false}]),
     {ok, SocketD} = gen_tcp:connect("127.0.0.1", Port, [binary, {active, false}]),
     receive
-        {SocketA, SocketB} -> ok
+        {Ref, SocketA, SocketB} -> ok
     end,
 
     Pid = spawn(fun() ->
