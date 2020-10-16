@@ -1,6 +1,6 @@
 {application, splicer,
  [{description, "An OTP library for splicing 2 sockets together"},
-  {vsn, "0.5.0"},
+  {vsn, "git"},
   {registered, []},
   {applications,
    [kernel,
@@ -8,7 +8,6 @@
    ]},
   {env,[]},
   {modules, []},
-  {maintainers, []},
   {licenses, ["Apache 2.0"]},
-  {links, []}
+  {links, [{"Github", "https://github.com/helium/erlang-splicer"}]}
  ]}.

@@ -1,8 +1,11 @@
-{"1.1.0",
-[{<<"inert">>,{pkg,<<"inert">>,<<"1.0.0">>},0},
- {<<"procket">>,{pkg,<<"procket">>,<<"0.9.3">>},0}]}.
+{"1.2.0",
+[{<<"inert">>,{pkg,<<"inert">>,<<"1.0.1">>},0},
+ {<<"procket">>,{pkg,<<"procket">>,<<"0.9.4">>},0}]}.
 [
 {pkg_hash,[
- {<<"inert">>, <<"DF4A4E0239C5D25FE192620F7BE054DF88845E8FC9F3A8049837DE334F04068E">>},
- {<<"procket">>, <<"593E907645307BC854CE3532F3F9C07987D8DC9848180CD2EE408FD92B22CC1E">>}]}
+ {<<"inert">>, <<"E5C7568C5EF0C6103FEDB1CBDB29F32D701985E3588E1FAC37AEBA96671BA11B">>},
+ {<<"procket">>, <<"1FC0D557ACC0145DD167C566C68F83B183E923016904DFE980534B3C9150E92B">>}]},
+{pkg_hash_ext,[
+ {<<"inert">>, <<"F22D6663D6A5BE7C3E47B42839F9A5421D023C5952CE926828A45BBD5A7A0DAA">>},
+ {<<"procket">>, <<"647C2D1F5006370E457522ECC69509F1020D7D558F3D6E196825E1F4F3660218">>}]}
 ].
